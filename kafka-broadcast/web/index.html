@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>Kafka Producer</title>
+        <link href="main.css" rel="stylesheet">
+        <script crossorigin="anonymous"
+                integrity="sha384-0gxUXCCR8yv9FM2b+U3FDbsKthCI66oH5IA9fHppQq9DDMHuMauqq1ZHBpJxQ0J0"
+                src="https://unpkg.com/htmx.org@1.9.11"></script>
+    </head>
+    <body>
+        <h1>Kafka Producer</h1>
+
+        <div class="flex-container">
+            <form hx-encoding="multipart/form-data" hx-post="/upload" hx-target="#upload-status" hx-trigger="input" id="form">
+                <label class="file-upload-button" for="file-upload"><img alt="Choose File" src="assets/document-plus.svg"></label>
+                <input accept=".csv" class="hidden" id="file-upload" name="file" type="file">
+            </form>
+            <div></div>
+            <div class="control-group">
+                <button id="back-button" class="control-button" hx-post="/back" hx-target=".player-status" hx-swap="innerHTML">
+                    <img alt="Back" src="assets/backward.svg">
+                </button>
+                <button id="play-button" class="control-button" hx-post="/play" hx-target=".player-status" hx-swap="innerHTML">
+                    <img alt="Play" src="assets/play.svg">
+                </button>
+                <button id="pause-button" class="control-button" hx-post="/pause" hx-target=".player-status" hx-swap="innerHTML">
+                    <img alt="Pause" src="assets/pause.svg">
+                </button>
+                <button id="stop-button" class="control-button" hx-post="/stop" hx-target=".player-status" hx-swap="innerHTML">
+                    <img alt="Stop" src="assets/stop.svg">
+                </button>
+            </div>
+        </div>
+        <p id="upload-status" class="upload-status">No file loaded. Upload one of the sample flight data .csv files to get started.</p>
+        <div class="player-status">
+            <p>
+                stop
+            </p>
+        </div>
+        <script>
+            document.body.addEventListener('htmx:afterSwap', function (event) {
+                var state = event.detail.xhr.responseText;
+                var buttons = document.querySelectorAll('.control-button');
+                buttons.forEach(function (button) {
+                    button.classList.remove('depressed');
+                });
+                var button = document.getElementById(state + '-button');
+                if (button) {
+                    button.classList.add('depressed');
+                }
+            });
+        </script>
+
+        <h2>Broadcast Messages</h2>
+        <div class="server-messages">
+        </div>
+        <script>
+            var socket = new WebSocket("ws://localhost:8080/ws");
+            socket.onmessage = function (event) {
+
+                var serverMessages = document.querySelector(".server-messages");
+                var log = document.createElement("p");
+                log.textContent = event.data;
+                serverMessages.appendChild(log);
+                serverMessages.scrollTop = serverMessages.scrollHeight;
+            };
+        </script>
+        <p>These are copies of the messages sent to the Kafka broker, as well as status messages about the state of the playback machine.</p>
+
+        <h2>About</h2>
+        <p> This page allows you to control a Kafka producer that emits Kafka messages from a .csv file you upload. It expects a .csv file with headers on the first row and data on all subsequent rows. All data elements should be parseable to float64s. </p>
+
+        <h2>Kafka Consumer</h2>
+        <p>
+            The Kafka consumer app can be found <a href="http://localhost:8081">here</a>. It operates on a different server.
+        </p>
+    </body>
+</html>
