@@ -1,93 +1,28 @@
-package main
+package pkg
 
 import (
-	"encoding/csv"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"mime/multipart"
 	"net/http"
-	"os"
-	"strconv"
 	"time"
 
 	"github.com/IBM/sarama"
 	"github.com/gorilla/websocket"
 )
 
-type playerState int
-
-const (
-	stopped playerState = iota
-	playing
-	paused
-)
-
-func (p *playerState) Play() {
-	switch *p {
-	case stopped:
-		*p = playing
-	case playing:
-		return
-	case paused:
-		*p = playing
-	}
-}
-
-func (p *playerState) Pause() {
-	switch *p {
-	case stopped:
-		*p = paused
-	case playing:
-		*p = paused
-	case paused:
-		*p = stopped
-	}
-}
-
-func (p *playerState) Stop() {
-	switch *p {
-	case stopped:
-		return
-	case playing:
-		*p = stopped
-	case paused:
-		*p = stopped
-	}
-}
-
-func (p playerState) State() string {
-	switch p {
-	case stopped:
-		return "stop"
-	case playing:
-		return "play"
-	case paused:
-		return "pause"
-	}
-	return "unknown"
-}
-
-type kafkaState int
-
-const (
-	waiting kafkaState = iota
-	ready
-	producing
-)
-
 type Server struct {
-	ps            playerState
-	ks            kafkaState
+	PlayerState   playerState
+	KafkaState    kafkaState
 	kafkaProducer sarama.SyncProducer
 	flightData    []map[string]float64
-	clients       map[*websocket.Conn]bool
-	broadcast     chan string
-	upgrader      websocket.Upgrader
+	Clients       map[*websocket.Conn]bool
+	Broadcast     chan string
+	Upgrader      websocket.Upgrader
 }
 
-func (s *Server) startKafkaProducer() {
+func (s *Server) StartKafkaProducer() {
 	kafkaConfig := sarama.NewConfig()
 	kafkaConfig.Producer.Return.Successes = true
 	kafkaConfig.Producer.Return.Errors = true
@@ -97,14 +32,13 @@ func (s *Server) startKafkaProducer() {
 		s.kafkaProducer, err = sarama.NewSyncProducer([]string{"kafka:9092"}, kafkaConfig)
 		if err == nil {
 			time.Sleep(5 * time.Second)
-			s.broadcast <- fmt.Sprintf("Waiting for the Kafka broker to be ready...\n")
+			s.Broadcast <- fmt.Sprintf("Waiting for the Kafka broker to be Ready...\n")
 			break
 		}
 	}
-
 }
 
-func (s *Server) runServer() {
+func (s *Server) RunServer() {
 	http.HandleFunc("/", s.handleRoot)
 	http.HandleFunc("/upload", s.handleFileUpload)
 	http.HandleFunc("/ws", s.handleConnections)
@@ -120,32 +54,32 @@ func (s *Server) runServer() {
 }
 
 func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
-	s.ps.Play()
-	s.broadcast <- fmt.Sprintf("Playing...")
-	fmt.Fprint(w, s.ps.State())
+	s.PlayerState.Play()
+	s.Broadcast <- fmt.Sprintf("Playing...")
+	fmt.Fprint(w, s.PlayerState.State())
 }
 
 func (s *Server) handlePause(w http.ResponseWriter, r *http.Request) {
-	s.ps.Pause()
-	s.broadcast <- fmt.Sprintf("Paused.")
-	fmt.Fprint(w, s.ps.State())
+	s.PlayerState.Pause()
+	s.Broadcast <- fmt.Sprintf("Paused.")
+	fmt.Fprint(w, s.PlayerState.State())
 }
 
 func (s *Server) handleStop(w http.ResponseWriter, r *http.Request) {
-	s.ps.Stop()
-	s.broadcast <- fmt.Sprintf("Stopped.")
-	fmt.Fprint(w, s.ps.State())
+	s.PlayerState.Stop()
+	s.Broadcast <- fmt.Sprintf("Stopped.")
+	fmt.Fprint(w, s.PlayerState.State())
 }
 
 func (s *Server) handleBack(w http.ResponseWriter, r *http.Request) {
-	s.ps.Stop()
-	s.broadcast <- fmt.Sprintf("Reset.")
-	fmt.Fprint(w, s.ps.State())
+	s.PlayerState.Stop()
+	s.Broadcast <- fmt.Sprintf("Reset.")
+	fmt.Fprint(w, s.PlayerState.State())
 }
 
 func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 	// Upgrade initial GET request to a websocket
-	ws, err := s.upgrader.Upgrade(w, r, nil)
+	ws, err := s.Upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -153,25 +87,25 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 	defer ws.Close()
 
 	// Register our new client
-	s.clients[ws] = true
+	s.Clients[ws] = true
 
 	for {
 		_, _, err := ws.ReadMessage()
 		if err != nil {
-			delete(s.clients, ws)
+			delete(s.Clients, ws)
 			break
 		}
 	}
 }
 
-func (s *Server) runBroadcast() {
-	for msg := range s.broadcast {
-		for client := range s.clients {
+func (s *Server) RunBroadcast() {
+	for msg := range s.Broadcast {
+		for client := range s.Clients {
 			err := client.WriteMessage(websocket.TextMessage, []byte(msg))
 			if err != nil {
 				log.Printf("Websocket error: %v", err)
 				client.Close()
-				delete(s.clients, client)
+				delete(s.Clients, client)
 			}
 		}
 	}
@@ -186,7 +120,7 @@ func (s *Server) handleFileUpload(w http.ResponseWriter, r *http.Request) {
 	// Parse the multipart form in the request
 	err := r.ParseMultipartForm(10 << 20) // 10 MB
 	if err != nil {
-		s.broadcast <- fmt.Sprintf("Error parsing multipart form: %v", err)
+		s.Broadcast <- fmt.Sprintf("Error parsing multipart form: %v", err)
 		http.Error(w, "Error parsing multipart form", http.StatusBadRequest)
 		return
 	}
@@ -194,7 +128,7 @@ func (s *Server) handleFileUpload(w http.ResponseWriter, r *http.Request) {
 	// Retrieve the file from form data
 	file, _, err := r.FormFile("file") // "file" is the key of the input field of the form
 	if err != nil {
-		s.broadcast <- fmt.Sprintf("Error retrieving the file: %v", err)
+		s.Broadcast <- fmt.Sprintf("Error retrieving the file: %v", err)
 		http.Error(w, "Error retrieving the file", http.StatusBadRequest)
 		return
 	}
@@ -216,26 +150,28 @@ func (s *Server) handleFileUpload(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Println("Error writing to the response writer: ", err)
 	}
-	s.ks = ready
-	s.broadcast <- fmt.Sprintf("Kafka broker is ready.\n")
+
+	s.KafkaState = Ready
+	s.Broadcast <- fmt.Sprintf("Kafka broker is Ready.\n")
+
 }
 
-func (s *Server) runKafka() {
+func (s *Server) RunKafka() {
 	for {
-		if s.ks == ready {
-			s.ks = producing
+		if s.KafkaState == Ready {
+			s.KafkaState = Producing
 			for i, record := range s.flightData {
-				for s.ps == paused {
+				for s.PlayerState == Paused {
 					time.Sleep(50 * time.Millisecond)
 				}
-				if s.ps == stopped {
+				if s.PlayerState == Stopped {
 					break
 				}
 
 				// Marshal the record to a JSON string
 				jsonRecord, err := json.Marshal(record)
 				if err != nil {
-					s.broadcast <- fmt.Sprintf("Error marshaling record to JSON: %v", err)
+					s.Broadcast <- fmt.Sprintf("Error marshaling record to JSON: %v", err)
 					continue
 				}
 
@@ -246,72 +182,13 @@ func (s *Server) runKafka() {
 				}
 				partition, offset, err := s.kafkaProducer.SendMessage(msg)
 				if err != nil {
-					s.broadcast <- fmt.Sprintf("Error sending message to Kafka: %v", err)
+					s.Broadcast <- fmt.Sprintf("Error sending message to Kafka: %v", err)
 				} else {
-					s.broadcast <- fmt.Sprintf("id:%d(p%d:o%d) %s", i, partition, offset, jsonRecord)
+					s.Broadcast <- fmt.Sprintf("id:%d(p%d:o%d) %s", i, partition, offset, jsonRecord)
 				}
 				time.Sleep(50 * time.Millisecond)
 			}
-			s.ks = ready
+			s.KafkaState = Ready
 		}
 	}
-}
-
-func csvToMap(file multipart.File) ([]map[string]float64, error) {
-
-	// Create a new reader
-	reader := csv.NewReader(file)
-
-	// Read the first line (column headers)
-	headers, err := reader.Read()
-	if err != nil {
-		return nil, err
-	}
-	var data []map[string]float64
-	// Read the rest of the file
-	for {
-		record, err := reader.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
-
-		d := make(map[string]float64)
-		// Convert each string in the record to a float64 and store it in the map
-		for i, str := range record {
-			num, err := strconv.ParseFloat(str, 64)
-			if err != nil {
-				return nil, err
-			}
-			d[headers[i]] = num
-		}
-		data = append(data, d)
-	}
-
-	return data, nil
-}
-
-func main() {
-	server := &Server{
-		ps:        stopped,
-		ks:        waiting,
-		clients:   make(map[*websocket.Conn]bool),
-		broadcast: make(chan string),
-		upgrader: websocket.Upgrader{
-			CheckOrigin: func(r *http.Request) bool {
-				return true
-			},
-		},
-	}
-
-	go server.runServer()
-	go server.runBroadcast()
-
-	server.startKafkaProducer()
-	go server.runKafka()
-
-	c := make(chan os.Signal, 1)
-	<-c
 }
