@@ -6,3 +6,4 @@ Run `docker-compose up --build` to build the project and start the Kafka broker,
 You can use either of the `sample_data_{1,2}.csv` .csv files to test the producer. The `sample_data` files are in the `sample_data` directory.
 
 Use the `weather_balloon_data.csv` file in the consumer (serves as the truth source for the survey method).
+
