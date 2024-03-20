@@ -9,8 +9,8 @@ services:
       - kafka
       - zookeeper
 
-  survey:
-    build: ./survey/
+  survey-service:
+    build: ./survey-service/
     ports:
       - "8081:8081"
     depends_on:

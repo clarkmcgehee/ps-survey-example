@@ -7,5 +7,4 @@ You can use either of the `sample_data_{1,2}.csv` .csv files to test the produce
 
 Use the `weather_balloon_data.csv` file in the consumer (serves as the truth source for the survey method).
 
-TODO: Extensive refactoring...the code is a mess.
 
