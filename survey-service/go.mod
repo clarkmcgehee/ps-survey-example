@@ -1,11 +1,10 @@
-module survey
+module survey-service
 
 go 1.22
 
 require (
 	github.com/IBM/sarama v1.43.0
 	github.com/gorilla/websocket v1.5.1
-	gonum.org/v1/gonum v0.15.0
 )
 
 require (
@@ -26,7 +25,5 @@ require (
 	github.com/pierrec/lz4/v4 v4.1.21 // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475 // indirect
 	golang.org/x/crypto v0.19.0 // indirect
-	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa // indirect
 	golang.org/x/net v0.21.0 // indirect
-	golang.org/x/tools v0.15.0 // indirect
 )
